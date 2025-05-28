@@ -8,37 +8,57 @@ import os
 import zipfile
 import base64
 import traceback
+import json
+from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+
+# Streamlit app setup
 st.set_page_config(page_title="Trainer Invoice Generator")
 st.title("📄 Trainer Invoice Generator")
 
-# Input Billing Date
+# Input billing date
 billing_date = st.text_input("Enter Billing Date (dd-mm-yyyy):")
 
 if billing_date:
     try:
-        # Format and parse the billing date
+        # Parse and format date
         selected_date = billing_date.replace("/", "-").strip()
         target_date = datetime.datetime.strptime(selected_date, "%d-%m-%Y")
 
-        # Google Sheets API setup
+        # Credentials dictionary from environment variables
+        creds_dict = {
+            "type": os.getenv("TYPE"),
+            "project_id": os.getenv("PROJECT_ID"),
+            "private_key_id": os.getenv("PRIVATE_KEY_ID"),
+            "private_key": os.getenv("PRIVATE_KEY").replace("\\n", "\n"),  # 🔥 THIS LINE IS CRUCIAL
+            "client_email": os.getenv("CLIENT_EMAIL"),
+            "client_id": os.getenv("CLIENT_ID"),
+            "auth_uri": os.getenv("AUTH_URI"),
+            "token_uri": os.getenv("TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_X509_CERT_URL"),
+            "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
+            "universe_domain": os.getenv("UNIVERSE_DOMAIN"),
+        }
+
+        # Save credentials to a temporary JSON file
+        with open("temp_creds.json", "w") as f:
+            json.dump(creds_dict, f)
+
+        # Authorize access
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name("trainerbill-4073b02b0973.json", scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("temp_creds.json", scope)
         client = gspread.authorize(creds)
 
-        # Fetch data from Google Sheets
+        # Read data from Google Sheet
         sheet = client.open("Calendar CDB").worksheet("Trainer Bills")
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-
-        # Parse billing date column
+        df = pd.DataFrame(sheet.get_all_records())
         df["Billing Date"] = pd.to_datetime(df["Billing Date"], dayfirst=True, errors='coerce')
 
-        # Debug output to verify dates
         st.write("Selected Billing Date:", target_date.strftime("%Y-%m-%d"))
         st.write("Available Billing Dates in Sheet:", df["Billing Date"].dt.strftime("%Y-%m-%d").unique())
 
-        # Filter records
         filtered_df = df[df["Billing Date"] == target_date]
 
         if filtered_df.empty:
@@ -75,12 +95,11 @@ if billing_date:
                 no_of_sessions = row["No of Sessions"]
                 no_of_students = row["No of Students"]
 
-                # Create PDF
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_auto_page_break(auto=True, margin=15)
 
-                watermark_path = "logo-1.png"  # Ensure this image is present
+                watermark_path = "logo-1.png"
                 if os.path.exists(watermark_path):
                     watermark_width = 70
                     watermark_height = 30
@@ -98,7 +117,7 @@ if billing_date:
                 pdf.cell(210, 15, "Trainer Invoice", ln=True, align="C")
                 pdf.ln(10)
 
-                # To / From
+                # Addresses
                 pdf.set_font("Arial", "", 10)
                 pdf.cell(0, 8, "To", ln=True)
                 pdf.multi_cell(0, 5, "Gryphon Academy\n9th Floor, Olympia Business House (Achalare)\nNext to Supreme HQ, Mum - Pune Highway, Baner\nPune, MH - 411045")
@@ -107,7 +126,7 @@ if billing_date:
                 pdf.multi_cell(0, 5, f"{trainer_name}")
                 pdf.ln(3)
 
-                # Bill & Bank Details
+                # Bill & bank details
                 pdf.set_font("Arial", "B", 10)
                 pdf.cell(90, 8, "Bill Details", 1)
                 pdf.cell(0, 8, "Account Details of Trainer", 1, ln=True)
@@ -198,12 +217,12 @@ if billing_date:
                     pdf.cell(col_width, 12, "", 1, 0, 'C')
                 pdf.ln()
 
-                # Save PDF
+                # Save the PDF
                 filepath = os.path.join(output_folder, f"Trainer_Invoice_{bill_no}.pdf")
                 pdf.output(filepath)
                 pdf_files.append(filepath)
 
-            # ZIP creation
+            # ZIP the PDFs
             zip_filename = "Trainer_Invoices.zip"
             zip_path = os.path.join(output_folder, zip_filename)
             with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -215,6 +234,9 @@ if billing_date:
                 b64 = base64.b64encode(f.read()).decode()
                 href = f'<a href="data:application/zip;base64,{b64}" download="{zip_filename}">📥 Download ZIP of Invoices</a>'
                 st.markdown(href, unsafe_allow_html=True)
+
+        # Remove temporary credentials
+        os.remove("temp_creds.json")
 
     except Exception as e:
         st.error("❌ An unexpected error occurred.")
