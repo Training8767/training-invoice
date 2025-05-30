@@ -32,7 +32,7 @@ if billing_date:
             "type": os.getenv("TYPE"),
             "project_id": os.getenv("PROJECT_ID"),
             "private_key_id": os.getenv("PRIVATE_KEY_ID"),
-            "private_key": os.getenv("PRIVATE_KEY").replace("\\n", "\n"),  # 🔥 THIS LINE IS CRUCIAL
+            "private_key": os.getenv("PRIVATE_KEY").replace("\\n", "\n"),
             "client_email": os.getenv("CLIENT_EMAIL"),
             "client_id": os.getenv("CLIENT_ID"),
             "auth_uri": os.getenv("AUTH_URI"),
@@ -167,77 +167,58 @@ if billing_date:
                     pdf.cell(0, 6, f"Rs. -", 1, ln=True)
 
                 pdf.cell(60, 6, "Food and Lodging", 1)
-                pdf.cell(40, 6, "", 1)
-                pdf.cell(40, 6, "", 1)
+                pdf.cell(40, 6, f"Rs. {food_and_lodging}", 1)
+                pdf.cell(40, 6, "-", 1)
                 pdf.cell(0, 6, f"Rs. {food_and_lodging}", 1, ln=True)
 
                 pdf.cell(60, 6, "Travel", 1)
-                pdf.cell(40, 6, "", 1)
-                pdf.cell(40, 6, "", 1)
+                pdf.cell(40, 6, f"Rs. {travel}", 1)
+                pdf.cell(40, 6, "-", 1)
                 pdf.cell(0, 6, f"Rs. {travel}", 1, ln=True)
 
-                # Totals
-                pdf.set_font("Arial", "B", 10)
-                pdf.cell(140, 6, "Total Amount", 1)
-                pdf.cell(0, 6, f"Rs. {total_cost}", 1, ln=True)
-                pdf.cell(140, 6, "Adhoc Addition/Deduction", 1)
+                pdf.cell(60, 6, "Adhoc Addition/Deduction", 1)
+                pdf.cell(40, 6, f"Rs. {adhoc}", 1)
+                pdf.cell(40, 6, "-", 1)
                 pdf.cell(0, 6, f"Rs. {adhoc}", 1, ln=True)
-                pdf.cell(140, 6, "Less (TDS)", 1)
+
+                pdf.cell(60, 6, "TDS Deduction", 1)
+                pdf.cell(40, 6, f"Rs. {tds}", 1)
+                pdf.cell(40, 6, "-", 1)
                 pdf.cell(0, 6, f"Rs. {tds}", 1, ln=True)
-                pdf.cell(140, 6, "Net Payment", 1)
-                pdf.cell(0, 6, f"Rs. {net_payment}", 1, ln=True)
 
-                # Summary
-                pdf.ln(5)
                 pdf.set_font("Arial", "B", 10)
-                pdf.cell(0, 8, "Summary of Training", 1, ln=True)
-                pdf.set_font("Arial", "", 9)
-                pdf.cell(70, 6, "No of Sessions", 1)
-                pdf.cell(0, 6, f"{no_of_sessions}", 1, ln=True)
-                pdf.cell(70, 6, "No of Hours", 1)
-                pdf.cell(0, 6, f"{hours}", 1, ln=True)
-                pdf.cell(70, 6, "No of Attendees", 1)
-                pdf.cell(0, 6, f"{no_of_students}", 1, ln=True)
-                pdf.cell(70, 6, "Average Students/ Batch", 1)
-                pdf.cell(0, 6, "-", 1, ln=True)
+                pdf.cell(140, 8, "Total", 1)
+                pdf.cell(0, 8, f"Rs. {total_cost}", 1, ln=True)
 
-                # Footer
-                pdf.ln(10)
-                col_width = 38
-                left_margin = (210 - (col_width * 5)) / 2
-                pdf.set_x(left_margin)
-                pdf.set_font("Arial", "", 9)
-                pdf.cell(col_width, 6, "L & D Manager", 1, 0, 'C')
-                pdf.cell(col_width, 6, "Co-founder", 1, 0, 'C')
-                pdf.cell(col_width, 6, "Paid By", 1, 0, 'C')
-                pdf.cell(col_width, 6, "Date/Stamp", 1, 0, 'C')
-                pdf.cell(col_width, 6, "Ref. ID", 1, 1, 'C')
-                pdf.set_x(left_margin)
-                for _ in range(5):
-                    pdf.cell(col_width, 12, "", 1, 0, 'C')
-                pdf.ln()
+                pdf.cell(140, 8, "Net Payment", 1)
+                pdf.cell(0, 8, f"Rs. {net_payment}", 1, ln=True)
 
-                # Save the PDF
-                filepath = os.path.join(output_folder, f"Trainer_Invoice_{bill_no}.pdf")
+                # Save PDF
+                filename = f"{bill_no}_{trainer_name.replace(' ', '_')}.pdf"
+                filepath = os.path.join(output_folder, filename)
                 pdf.output(filepath)
                 pdf_files.append(filepath)
 
-            # ZIP the PDFs
-            zip_filename = "Trainer_Invoices.zip"
-            zip_path = os.path.join(output_folder, zip_filename)
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
-                for pdf_file in pdf_files:
-                    zipf.write(pdf_file, os.path.basename(pdf_file))
+            # Zip and download
+            zip_filename = f"invoices_{selected_date}.zip"
+            zip_filepath = os.path.join(output_folder, zip_filename)
 
-            # Download link
-            with open(zip_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                href = f'<a href="data:application/zip;base64,{b64}" download="{zip_filename}">📥 Download ZIP of Invoices</a>'
+            with zipfile.ZipFile(zip_filepath, "w") as zipf:
+                for file in pdf_files:
+                    zipf.write(file, os.path.basename(file))
+
+            with open(zip_filepath, "rb") as f:
+                bytes_data = f.read()
+                b64 = base64.b64encode(bytes_data).decode()
+                href = f'<a href="data:application/zip;base64,{b64}" download="{zip_filename}">📥 Download All Invoices</a>'
                 st.markdown(href, unsafe_allow_html=True)
 
-        # Remove temporary credentials
-        os.remove("temp_creds.json")
+            # Cleanup
+            for file in pdf_files:
+                os.remove(file)
+            os.remove("temp_creds.json")
+            os.remove(zip_filepath)
 
     except Exception as e:
-        st.error("❌ An unexpected error occurred.")
-        st.code(traceback.format_exc())
+        st.error(f"An error occurred: {e}")
+        st.text(traceback.format_exc())
